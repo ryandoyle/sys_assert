@@ -10,6 +10,7 @@ Think of your system as running the codebase. sys_assert will *assert* on tests 
 
 # Test What?
 What can sys_assert test on? At the moment it is
+
 * Exit codes
 * Stdout
 * File content, permissions and ownership
@@ -20,6 +21,7 @@ What can sys_assert test on? At the moment it is
 # Running Tests
 
 There are three ways that sys_assert can test your system
+
 * In a pipeline
 * By letting sys_assert run the script/command
 * Running in a standalone mode, asserting a system after something has run
