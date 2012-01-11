@@ -26,17 +26,20 @@ There are three ways that sys_assert can test your system
 
 ## Pipeline
 Pipeline mode feels like the right way to do the test. The only disadvantage is the exit code cannot be determined.
-    $ myscript.sh | assert --stdout-contains "backup finished" --file-#/var/mybackup.tgz#-exists
+
+     $ myscript.sh | assert --stdout-contains "backup finished" --file-#/var/mybackup.tgz#-exists
 
 ## Running the command/script
 sys_assert can also run the command for you. The exit code of the command can be determined if this style of execution is used
-    $ assert -c "myscript.sh" --exit-code-is 0 --stdout-contains "backup finished" --file-#/var/mybackup.tgz#-exists
+
+     $ assert -c "myscript.sh" --exit-code-is 0 --stdout-contains "backup finished" --file-#/var/mybackup.tgz#-exists
 
 ## Standalone
 The last way to use sys_assert is to use it after-the-fact. This could be useful for testing the success of configuration management tools
-    $ puppet agent --test --trace
-    $ assert --file-#/etc/httpd/conf.d/myvhost.conf#-exists \
-        --service-#httpd#-is-running \
+
+     $ puppet agent --test --trace
+     $ assert --file-#/etc/httpd/conf.d/myvhost.conf#-exists \
+         --service-#httpd#-is-running \
 
 # Other pieces of the puzzle
 sys_assert should be part of your continuous intergration system. To take full advantage of systems testing, you will need throwaway coupute resources as part of your build.
