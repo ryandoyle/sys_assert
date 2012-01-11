@@ -1,0 +1,552 @@
+#!/bin/bash
+#
+#  funsh - a simple functional testing framework for Bash scripts & sysadmins
+#  Copyright (C) 2011 Ryan Doyle
+#
+#  This program is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+#
+
+#########################
+# VARIABLE DECLAIRATION #
+#########################
+PROGNAME=`basename $0`
+STDOUT_REAL=""
+EXIT_REAL=""
+# What we plan to exit with
+SELF_EXIT_CODE=0
+SELF_COMMAND=""
+# Count passes and failures
+SELF_PASSES=0
+SELF_FAILURES=0
+
+##################
+# BASE FUNCTIONS #
+##################
+usage(){
+cat <<EOF
+Usage: $PROGNAME [-h] [-c COMMAND] [TEST]...
+Functional testing for scripts and system administration tasks
+
+Options:
+    -h, --help                      This help screen
+    -c, --command "COMMAND"         If not used in pipeline mode, execute
+                                    this command to test on
+
+Tests:
+    --stdout-contains                   STRING 
+    --stdout-does-not-contain           STRING 
+    --stdout-is-exactly                 STRING
+
+    --exit-code-is                      CODE
+    --exit-code-is-not                  CODE
+
+    --file-#FILE#-exists
+    --file-#FILE#-does-not-exist
+    --file-#FILE#-has-mode              MODE
+    --file-#FILE#-has-owner             USER
+    --file-#FILE#-has-group             GROUP
+    --file-#FILE#-contains              REGEX/STRING
+    
+    --process-#NAME#-exists
+    --process-#NAME#-does-not-exist
+    --process-#NAME#-has-owner          USER
+    --process-#NAME#-cmd-line-contains  STRING
+
+    --service-#NAME#-is-running
+    --service-#NAME#-is-not-running
+
+Executing:
+$PROGNAME can be executed standalone or in a pipeline
+
+The pipeline mode is preferred but has the limitation that exit codes
+cannot be determined.
+
+    $ myscript | $PROGNAME --stdout-contains "Success"
+
+
+If the exit code is required, $PROGNAME can do the execution of the command
+you are wishing to run for you.
+
+    $ $PROGNAME -c 'myscript' --exit-code 0 --stdout-contains "Success"
+
+
+$PROGNAME can also be used /after/ a script or process has had an effect on the
+system. In this way, it could be used to test configuration management such as Puppet
+
+    $ puppet agent --test --trace
+    $ $PROGNAME --file-#/etc/httpd/conf.d/mysite.vhost.conf#-contains \\ 
+        "ServerName mysite.example.com" \\
+        --process-#httpd#-exists \\
+        --service-#apache2#-is-running
+    $ $PROGNAME --process-#/etc/ntp.conf#-exists
+
+EOF
+}
+
+ptest(){
+    local str=$1
+    echo -e "\e[0;34mTesting $str ...\e[00m"
+}
+
+ppass(){
+    local str=$1
+    echo -e "  Passed: \e[1;32m$str\e[00m"
+    SELF_PASSES=`expr $SELF_PASSES + 1`
+    return 0
+}
+pfail(){
+    local str=$1
+    echo -e "  Failed: \e[1;31m$str\e[00m"
+    # Change the exit code to non-zero on failure
+    SELF_EXIT_CODE=1
+    SELF_FAILURES=`expr $SELF_FAILURES + 1`
+    return 1
+}
+
+run_command(){
+    local SELF_COMMAND="$1"
+    STDOUT_REAL=`$SELF_COMMAND`
+    EXIT_REAL=$?
+    # Fix up the newlines
+    STDOUT_REAL=`echo $STDOUT_REAL | sed ':a;N;$!ba;s/\n/ /g'`
+}
+
+##################
+# TEST FUNCTIONS #
+##################
+test_stdout_contains(){
+    local STDOUT_EXPECTED=$1
+    local STDOUT_REAL=$2
+    ptest "stdout contains \"$STDOUT_EXPECTED\""
+    if `echo "$STDOUT_REAL" | grep -q "$STDOUT_EXPECTED"`; then
+        ppass "stdout contains \"$STDOUT_EXPECTED\""
+    else
+        pfail "stdout contains expected \"$STDOUT_EXPECTED\" in \"$STDOUT_REAL\""
+    fi
+}
+
+test_stdout_does_not_contain(){
+    local STDOUT_EXPECTED=$1
+    local STDOUT_REAL=$2
+    ptest "stdout does not contain \"$STDOUT_EXPECTED\""
+    if  `echo "$STDOUT_REAL" | grep -qv "$STDOUT_EXPECTED"`; then
+        ppass "stdout does not contain \"$STDOUT_EXPECTED\""
+    else
+        pfail "expected \"$STDOUT_EXPECTED\" to not be in \"$STDOUT_REAL\""
+    fi
+}
+
+test_stdout_is_exactly(){
+    local STDOUT_EXPECTED=$1
+    local STDOUT_REAL=$2
+    ptest "stdout is exactly \"$STDOUT_EXPECTED\""
+    if [ "$STDOUT_REAL" = "$STDOUT_EXPECTED" ]; then
+        ppass "stdout is exactly \"$STDOUT_EXPECTED\""
+    else
+        pfail "stdout is exactly expected \"$STDOUT_EXPECTED\", got \"$STDOUT_REAL\""
+    fi
+}
+
+test_exit_code_is(){
+    local EXIT_EXPECTED=$1
+    local EXIT_REAL=$2
+    ptest "exit code is $EXIT_EXPECTED"
+    # We can only check the exit code if we are running the command
+    # inside this program
+    if [ -z "$SELF_COMMAND" ]; then
+        pfail "exit code cannot be checked in a pipeline, use --command option"
+    else
+        if [ $EXIT_EXPECTED -eq $EXIT_REAL ]; then
+            ppass "exit code is $EXIT_REAL"
+        else
+            pfail "exit code is expected $EXIT_EXPECTED, got $EXIT_REAL"
+        fi
+    fi
+}
+
+test_exit_code_is_not(){
+    local EXIT_EXPECTED=$1
+    local EXIT_REAL=$2
+    ptest "exit code is not $EXIT_EXPECTED"
+    # We can only check the exit code if we are running the command
+    # inside this program
+    if [ -z "$SELF_COMMAND" ]; then
+        pfail "exit code cannot be checked in a pipeline, use --command option"
+    else
+        if [ $EXIT_EXPECTED -ne $EXIT_REAL ]; then
+            ppass "exit code is not $EXIT_REAL"
+        else
+            pfail "expected $EXIT_EXPECTED =! $EXIT_REAL"
+        fi
+    fi
+}
+
+test_file_exists(){
+    local SELF_FILE="$1"
+    ptest "file $SELF_FILE exists"
+    # Check it exists
+    if [ -f "$SELF_FILE" ]; then
+        ppass "$SELF_FILE exists"
+    else
+        pfail "could not find file $SELF_FILE or it is not a regular file"
+    fi
+}
+
+test_file_does_not_exist(){
+    local SELF_FILE="$1"
+    ptest "file $SELF_FILE does not exist"
+    # Check it exists
+    if [ -f "$SELF_FILE" ]; then
+        pfail "file $SELF_FILE exists"
+    else
+        ppass "$SELF_FILE does not exist"
+    fi
+}
+
+test_file_has_mode(){
+    local MODE_EXPECTED="$1"
+    local SELF_FILE="$2"
+    ptest "file $SELF_FILE has mode $MODE_EXPECTED"
+    # Check it exists
+    if [ ! -f "$SELF_FILE" ]; then
+        pfail "could not find file $SELF_FILE or it is not a regular file"
+    else
+        # Get the mode of the file
+        MODE_REAL=`stat --format="%a" $SELF_FILE`
+        if [ $MODE_REAL -eq $MODE_EXPECTED ]; then
+            ppass "mode is $MODE_REAL"
+        else
+            pfail "expected mode $MODE_EXPECTED, got $MODE_REAL"
+        fi
+    fi
+
+}
+
+test_file_has_owner(){
+    local UID_EXPECTED="$1"
+    local SELF_FILE="$2"
+    ptest "file $SELF_FILE has owner $UID_EXPECTED"
+    # Check it exists
+    if [ ! -f "$SELF_FILE" ]; then
+        pfail "could not find file $SELF_FILE or it is not a regular file"
+    else
+        UID_REAL=`stat --format="%U" $SELF_FILE`
+        if [ "$UID_REAL" = "$UID_EXPECTED" ]; then
+            ppass "$SELF_FILE has owner of $UID_REAL"
+        else
+            pfail "expected $SELF_FILE to have owner $UID_EXPECTED, got $UID_REAL"
+        fi
+
+    fi 
+}
+
+test_file_has_group(){
+    local GID_EXPECTED="$1"
+    local SELF_FILE="$2"
+    ptest "file $SELF_FILE has group $GID_EXPECTED"
+    # Check it exists
+    if [ ! -f "$SELF_FILE" ]; then
+        pfail "could not find file $SELF_FILE or it is not a regular file"
+    else
+        GID_REAL=`stat --format="%G" $SELF_FILE`
+        if [ "$UID_REAL" = "$GID_EXPECTED" ]; then
+            ppass "$SELF_FILE has group of $GID_REAL"
+        else
+            pfail "expected $SELF_FILE to have group $GID_EXPECTED, got $GID_REAL"
+        fi
+
+    fi 
+}
+
+test_file_contains(){
+    local CONTENT_EXPECTED="$1"
+    local SELF_FILE="$2"
+    ptest "file $SELF_FILE has content \"$CONTENT_EXPECTED\""
+    # Check it exists
+    if [ ! -f "$SELF_FILE" ]; then
+        pfail "could not find file $SELF_FILE or it is not a regular file"
+    else
+        grep -E "$CONTENT_EXPECTED" $SELF_FILE 2>&1 > /dev/null
+        if [ $? -eq 0 ]; then
+            ppass "$SELF_FILE has content \"$CONTENT_EXPECTED\""
+        else
+            pfail "expected $SELF_FILE to have content \"$CONTENT_EXPECTED\""
+        fi
+
+    fi 
+}
+
+test_process_exists(){
+    local PROCESS_EXPECTED="$1"
+    ptest "process $PROCESS_EXPECTED is running"
+    pgrep -x $PROCESS_EXPECTED 2>&1 > /dev/null
+    if [ $? -eq 0 ]; then
+        ppass "$PROCESS_EXPECTED found"
+    else
+        pfail "$PROCESS_EXPECTED not found"
+    fi
+}
+
+test_process_does_not_exist(){
+    local PROCESS_EXPECTED="$1"
+    ptest "process $PROCESS_EXPECTED is not running"
+    pgrep -x $PROCESS_EXPECTED 2>&1 > /dev/null
+    if [ $? -ne 0 ]; then
+        ppass "$PROCESS_EXPECTED is not running"
+    else
+        pfail "expected $PROCESS_EXPECTED not to be running"
+    fi
+}
+
+test_process_has_owner(){
+    local OWNER_EXPECTED=$1
+    local PROCESS=$2
+    ptest "process $PROCESS has owner $OWNER_EXPECTED"
+    pgrep -x $PROCESS 2>&1 > /dev/null
+    if [ $? -ne 0 ]; then
+        pfail "could not find the process $PROCESS_EXPECTED"
+        return 1
+    fi
+    pgrep -u $OWNER_EXPECTED -x $PROCESS 2>&1 > /dev/null
+    if [ $? -eq 0 ]; then
+        ppass "$PROCESS is owned by $OWNER_EXPECTED"
+    else
+        pfail "expected $PROCESS to be owned by $OWNER_EXPECTED"
+    fi
+    
+}
+
+test_process_cmd_line_contains(){
+    local CMDLINE_EXPECTED=$1
+    local PROCESS=$2
+    ptest "process $PROCESS has cmd line containing $CMDLINE_EXPECTED"
+    ps -C "$PROCESS" -f --no-heading | grep -Eq "$CMDLINE_EXPECTED"
+    if [ $? -eq 0 ]; then
+        ppass "$CMDLINE_EXPECTED found"
+    else
+        pfail "expected cmd line \"$CMDLINE_EXPECTED\" not found for any process called $PROCESS"
+    fi
+}
+
+
+test_service_is_running(){
+    local SERVICE=$1
+    ptest "service $SERVICE is running"
+    test -f /etc/init.d/$SERVICE
+    if [ $? -ne 0 ]; then
+        pfail "could not find service $SERVICE" 
+    else
+        /etc/init.d/$SERVICE status 2>&1 > /dev/null
+        if [ $? -eq 0 ]; then
+            ppass "$SERVICE is running"
+        else
+            pfail "expected $SERVICE to be running"
+        fi
+    fi
+}
+
+test_service_is_not_running(){
+    local SERVICE=$1
+    ptest "service $SERVICE is not running"
+    test -f /etc/init.d/$SERVICE
+    if [ $? -ne 0 ]; then
+        pfail "could not find service $SERVICE" 
+    else
+        /etc/init.d/$SERVICE status 2>&1 > /dev/null
+        if [ $? -eq 3 ]; then
+            ppass "$SERVICE is not running"
+        else
+            pfail "expected $SERVICE to not be running but it is"
+        fi
+    fi
+}
+
+################
+# MAIN PROGRAM #
+################
+while [ $# -gt 0 ]; do
+    case "$1" in
+    -h|--help)
+        usage
+        exit 1
+        ;;
+
+    -c|--command)
+        shift
+        SELF_COMMAND="$1"
+        shift
+        run_command "$SELF_COMMAND"
+        ;;
+
+    # STDOUT
+        --stdout-contains)
+        shift 
+        # Only try stdin if we haven't already got stdout AND we're not using the -c arg
+        if [ -z "$STDOUT_REAL" -a -z "$SELF_COMMAND" ]; then
+            STDOUT_REAL="`cat /proc/$$/fd/0 | sed ':a;N;$!ba;s/\n/ /g'`"
+        fi
+        test_stdout_contains "$1" "$STDOUT_REAL"
+        shift 
+        ;;
+
+        --stdout-does-not-contain)
+        shift 
+        # Only try stdin if we haven't already got stdout AND we're not using the -c arg
+        if [ -z "$STDOUT_REAL" -a -z "$SELF_COMMAND" ]; then
+            STDOUT_REAL="`cat /proc/$$/fd/0 | sed ':a;N;$!ba;s/\n/ /g'`"
+        fi
+        test_stdout_does_not_contain "$1" "$STDOUT_REAL"
+        shift 
+        ;;
+
+    --stdout-is-exactly)
+        shift 
+        if [ -z "$STDOUT_REAL" -a -z "$SELF_COMMAND" ]; then
+            STDOUT_REAL="`cat /proc/$$/fd/0 | sed ':a;N;$!ba;s/\n/ /g'`"
+        fi
+        test_stdout_is_exactly "$1" "$STDOUT_REAL"
+        shift 
+        ;;
+    
+    # EXIT 
+    --exit-code-is)
+        shift
+        test_exit_code_is $1 $EXIT_REAL
+        shift
+        ;;
+
+    --exit-code-is-not)
+        shift
+        test_exit_code_is_not $1 $EXIT_REAL
+        shift
+        ;;
+
+    # FILE
+    --file-*)
+            # Test it is in the correct format 
+            `echo $1 | grep -q "#"` || pfail "--file argument is not in the correct format"
+            # Pull out the filename
+            SELF_FILE=`echo $1 | cut -d "#" -f 2`
+            # Break back out into the case statement
+            case "$1" in
+            *-exists)
+                shift
+                test_file_exists "$SELF_FILE"
+                ;;
+            *-does-not-exist)
+                shift
+                test_file_does_not_exist "$SELF_FILE"
+                ;;
+            *-has-mode)
+                shift
+                test_file_has_mode "$1" "$SELF_FILE"
+                shift
+                ;;
+            *-has-owner)
+                shift
+                test_file_has_owner "$1" "$SELF_FILE"
+                shift
+                ;;
+            *-has-group)
+                shift
+                test_file_has_group "$1" "$SELF_FILE"
+                shift
+                ;;
+            *-contains)
+                shift
+                test_file_contains "$1" "$SELF_FILE"
+                shift
+                ;;
+            *)
+                echo "Unknown option $1"
+                usage
+                exit 1
+                ;;
+
+
+            esac
+        ;;
+    # PROCESS
+    --process-*)
+            # Check the format, as with file
+            `echo $1 | grep -q "#"` || pfail "--process argument is not in the correct format"
+            # Pull out the process
+            SELF_PROCESS=`echo $1 | cut -d "#" -f 2`
+            # Break back out into the case statement
+            case "$1" in
+            *-exists)
+                shift
+                test_process_exists "$SELF_PROCESS"
+                ;;
+            *-does-not-exist)
+                shift
+                test_process_does_not_exist "$SELF_PROCESS"
+                ;;
+            *-has-owner)
+                shift
+                test_process_has_owner "$1" "$SELF_PROCESS"
+                shift
+                ;;
+            *-cmd-line-contains)
+                shift
+                test_process_cmd_line_contains "$1" "$SELF_PROCESS"
+                shift
+                ;;
+            *)
+                echo "Unknown option $1"
+                usage
+                exit 1
+                ;;
+            esac
+        ;;
+    # SERVICE
+    --service-*)
+            `echo $1 | grep -q "#"` || pfail "--service argument is not in the correct format"
+            # Pull out the service
+            SELF_SERVICE=`echo $1 | cut -d "#" -f 2`
+            case "$1" in
+            *-is-running)
+                shift
+                test_service_is_running "$SELF_SERVICE"
+                ;;
+            *-is-not-running)
+                shift
+                test_service_is_not_running "$SELF_SERVICE"
+                ;;
+            *)
+                echo "Unknown option $1"
+                usage
+                exit 1
+                ;;
+            esac
+        ;;
+
+    --)
+        shift 
+        break
+        ;;
+
+    *)
+        echo "Unknown option $1"
+        usage
+        exit 1
+        ;;
+    esac
+done
+
+echo "Tests passed: $SELF_PASSES"
+echo "Tests failed: $SELF_FAILURES"
+
+exit $SELF_EXIT_CODE
