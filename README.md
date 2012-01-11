@@ -9,20 +9,20 @@ sys_assert is a basic functional testing framework for shell scripts and system 
 Think of your system as running the codebase. sys_assert will *assert* on tests about the system.
 
 # Test What?
-What can sys_assert test on? At the moment it is:
-    * Exit codes
-    * Stdout
-    * File content, permissions and ownership
-    * Processes
-    * Services
-    * And More! (when I implement them)
+What can sys_assert test on? At the moment it is
+* Exit codes
+* Stdout
+* File content, permissions and ownership
+* Processes
+* Services
+* And More! (when I implement them)
 
 # Running Tests
 
 There are three ways that sys_assert can test your system
-    * In a pipeline
-    * By letting sys_assert run the script/command
-    * Running in a standalone mode, asserting a system after something has run
+* In a pipeline
+* By letting sys_assert run the script/command
+* Running in a standalone mode, asserting a system after something has run
 
 ## Pipeline
 Pipeline mode feels like the right way to do the test. The only disadvantage is the exit code cannot be determined.
