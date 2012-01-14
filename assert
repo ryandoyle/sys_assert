@@ -68,6 +68,7 @@ Tests:
     --service-#NAME#-is-not-running
 
     --package-#NAME#-is-installed
+    --package-#NAME#-is-not-installed
 
 Executing:
 $PROGNAME can be executed standalone or in a pipeline
@@ -430,6 +431,34 @@ test_package_is_installed(){
 	fi 
 	
 }
+test_package_is_not_installed(){
+	local PACKAGE=$1
+	local INST=1 # assume not installed
+    ptest "package $PACKAGE is not installed"
+	case `pkg_is` in
+		rpm)
+			rpm -qa | grep "$PACKAGE" > /dev/null 2>&1
+			if [ $? -ne 0 ]; then
+				INST=0
+			fi
+		;;
+		dpkg)	
+			dpkg -l "$PACKAGE" > /dev/null 2>&1
+			if [ $? -ne 0 ]; then
+				INST=0
+			fi
+		;;
+		*)
+			# Do nothing, not implemented
+		;;
+	esac
+	if [ $INST -eq 0 ]; then
+		ppass "$PACKAGE is not installed"
+	else
+    	pfail "expected $PACKAGE to not be installed"
+	fi 
+	
+}
 ################
 # MAIN PROGRAM #
 ################
@@ -597,6 +626,10 @@ while [ $# -gt 0 ]; do
 			*-is-installed)
 				shift 
 				test_package_is_installed "$SELF_PACKAGE"
+				;;
+			*-is-not-installed)
+				shift 
+				test_package_is_not_installed "$SELF_PACKAGE"
 				;;
             *)
                 echo "Unknown option $1"
