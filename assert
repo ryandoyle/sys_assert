@@ -291,7 +291,7 @@ test_file_has_group(){
         pfail "could not find file $SELF_FILE or it is not a regular file"
     else
         GID_REAL=`stat --format="%G" $SELF_FILE`
-        if [ "$UID_REAL" = "$GID_EXPECTED" ]; then
+        if [ "$GID_REAL" = "$GID_EXPECTED" ]; then
             ppass "$SELF_FILE has group of $GID_REAL"
         else
             pfail "expected $SELF_FILE to have group $GID_EXPECTED, got $GID_REAL"
