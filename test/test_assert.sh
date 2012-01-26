@@ -179,6 +179,11 @@ echo "Pass if bash command line arguments contain test-assert-exe"
 OUT=`$ASSERT --process-#bash#-cmd-line-contains test-assert-exe`
 should_pass $? "$OUT"
 
+echo "Fail if bash command line arguments contain probablydoesnotexist"
+OUT=`$ASSERT --process-#bash#-cmd-line-contains probablydoesnotexist`
+should_pass $? "$OUT"
+
+
 # Cleanup !
 echo "Cleaning up!"
 echo "Killing test process with PID `cat $TMP/test-assert-exec.pid`"

@@ -362,7 +362,8 @@ test_process_cmd_line_contains(){
     local CMDLINE_EXPECTED=$1
     local PROCESS=$2
     ptest "process $PROCESS has cmd line containing $CMDLINE_EXPECTED"
-    ps -C "$PROCESS" -f --no-heading | grep -Eq "$CMDLINE_EXPECTED"
+	# TODO: Be less lazy
+    ps -ef  | grep "$PROCESS" | grep -Eq "$CMDLINE_EXPECTED"
     if [ $? -eq 0 ]; then
         ppass "$CMDLINE_EXPECTED found"
     else
